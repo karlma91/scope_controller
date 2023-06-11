@@ -1,0 +1,12 @@
+[package]
+name = "telescope_controller"
+version = "0.1.0"
+edition = "2021"
+
+[build]
+target-dir = "/tmp/cargo-target"
+
+[dependencies]
+gilrs = "0.10.2"
+serialport = "4.2.1"
+clap = { version = "3.1.6", features = ["derive"] }
