@@ -1,0 +1,11 @@
+[Unit]
+Description=Telescope Controller
+After=multi-user.target
+
+[Service]
+ExecStart=/home/bolla/scope_controller/target/release/telescope_controller
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
