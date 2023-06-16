@@ -42,8 +42,8 @@ fn move_stepper(port: &mut dyn serialport::SerialPort, st: Steppers ,sd: StepDir
             match sd {
                 StepDir::DOWN => byte = "b".to_string(),
                 StepDir::UP => byte = "a".to_string(),
-                StepDir::BIG_DOWN => byte = "r".to_string(),
-                StepDir::BIG_UP=> byte = "t".to_string(),
+                StepDir::BIG_DOWN => byte = "d".to_string(),
+                StepDir::BIG_UP=> byte = "c".to_string(),
             }
         },
         Steppers::Focus => {
@@ -143,12 +143,34 @@ fn main() {
             if gamepad.is_pressed(Button::LeftTrigger2) {
                 move_stepper(&mut *port, Steppers::Focus, StepDir::UP, &mut stepp_ps[2])
             }
+            if gamepad.is_pressed(Button::Select) {
+                move_stepper(&mut *port, Steppers::Focus, StepDir::DOWN, &mut stepp_ps[2])
+            }
+            if gamepad.is_pressed(Button::LeftTrigger2) {
+                move_stepper(&mut *port, Steppers::Focus, StepDir::UP, &mut stepp_ps[2])
+            }
+
+            if gamepad.is_pressed(Button::West) {
+                move_stepper(&mut *port, Steppers::YAxis, StepDir::BIG_DOWN, &mut stepp_ps[0])
+            }
+            if gamepad.is_pressed(Button::East) {
+                move_stepper(&mut *port, Steppers::YAxis, StepDir::BIG_UP, &mut stepp_ps[0])
+            }
+            if gamepad.is_pressed(Button::South) {
+                move_stepper(&mut *port, Steppers::XAxis, StepDir::BIG_DOWN, &mut stepp_ps[1])
+            }
+            if gamepad.is_pressed(Button::North) {
+                move_stepper(&mut *port, Steppers::XAxis, StepDir::BIG_UP, &mut stepp_ps[1])
+            }
             if gamepad.is_pressed(Button::RightTrigger) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::BIG_DOWN, &mut stepp_ps[2])
+                move_stepper(&mut *port, Steppers::Focus, StepDir::BIG_DOWN, &mut stepp_ps[2]);
+                thread::sleep(time::Duration::from_millis(100));
             }
             if gamepad.is_pressed(Button::LeftTrigger) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::BIG_UP, &mut stepp_ps[2])
+                move_stepper(&mut *port, Steppers::Focus, StepDir::BIG_UP, &mut stepp_ps[2]);
+                thread::sleep(time::Duration::from_millis(100));
             }
+
         }
     }
 }
