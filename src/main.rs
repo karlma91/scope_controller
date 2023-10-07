@@ -6,8 +6,12 @@ use clap::{Arg, Command};
 use serialport::{ClearBuffer, DataBits, FlowControl, Parity, SerialPort, StopBits};
 use std::io::{self, Write};
 use uuid::Uuid;
+use std::error::Error;
 use std::io::BufReader;
 use std::io::BufRead;
+use std::time::Instant;
+use rppal::gpio::{Gpio, OutputPin};
+
 #[derive(Debug, Copy, Clone)]
 pub struct StepPos {
     pos: i32,
@@ -21,59 +25,73 @@ enum Steppers{
 #[derive(Debug)]
 enum StepDir {
     UP,
-    DOWN,
-    BIG_UP,
-    BIG_DOWN
+    DOWN
+}
+fn do_steps(port: &mut OutputPin, sp: &mut StepPos, steps:i32){
+    for _n in 0..steps {
+        port.set_high();
+        thread::sleep(time::Duration::from_micros(15));
+        port.set_low();
+    }
 }
 
-fn move_stepper(port: &mut dyn serialport::SerialPort, st: Steppers ,sd: StepDir, sp: &mut StepPos){
+fn move_stepper(port: &mut OutputPin, dir_pin: &mut OutputPin, sd: StepDir, sp: &mut StepPos, steps:i32, sleep:u64){
     
     let mut byte = String::from("a");
-    match st {
-        Steppers::YAxis => {
-            match sd {
-                StepDir::DOWN => byte = "y".to_string(),
-                StepDir::UP => byte = "u".to_string(),
-                StepDir::BIG_DOWN => byte = "r".to_string(),
-                StepDir::BIG_UP=> byte = "t".to_string(),
-            }
+    let mut dirsteps = steps;
+    match sd {
+        StepDir::DOWN =>{
+            dir_pin.set_low();
+            dirsteps = dirsteps * -1;
         },
-        Steppers::XAxis => {
-            match sd {
-                StepDir::DOWN => byte = "b".to_string(),
-                StepDir::UP => byte = "a".to_string(),
-                StepDir::BIG_DOWN => byte = "d".to_string(),
-                StepDir::BIG_UP=> byte = "c".to_string(),
-            }
-        },
-        Steppers::Focus => {
-            match sd {
-                StepDir::DOWN => byte = "f".to_string(),
-                StepDir::UP => byte = "g".to_string(),
-                StepDir::BIG_DOWN => byte = "F".to_string(),
-                StepDir::BIG_UP=> byte = "G".to_string(),
-            }
+        
+        StepDir::UP => {
+            dir_pin.set_high();
         }
     }
-    println!("Writing: {}", byte);
-    let output = byte.as_bytes();
-    port.write(output);
-    thread::sleep(time::Duration::from_millis(10));
+    sp.pos += dirsteps;
+    do_steps(port, sp, steps);
 
-    let mut serial_buf: Vec<u8> = vec![0; 32];
-    port.read(serial_buf.as_mut_slice());
-    io::stdout().write_all(&serial_buf).unwrap();
-    match sd {
-        StepDir::DOWN => sp.pos -= 1,
-        StepDir::UP => sp.pos += 1,
-        StepDir::BIG_DOWN => sp.pos -= 64,
-        StepDir::BIG_UP => sp.pos += 64
+    if(sleep > 0){
+        thread::sleep(time::Duration::from_micros(sleep));
     }
+    // let sleep = 100;
+    // let mut waited = 0;
+    // let max_rpm = 200;
+    // let steps_per_rev = 200*16;
+    // let max_sps = 200*10*4;
+    // let min_sleep = 1000000 / max_sps;
+    // let start_sleep = 1000000/(steps_per_rev/2);
+    // let accel_steps = 4000;
+    // let sleep_steps = (start_sleep-min_sleep)*1000/accel_steps;
+    // let mut curr_sleep: i128 = start_sleep*1000;
+    // println!("start:{} min:{} step:{}", start_sleep*1000, min_sleep*1000, sleep_steps );
+
+    // for n in 1..640000 {
+    //     port.set_high();
+    //     curr_sleep -= sleep_steps;
+    //     curr_sleep = if curr_sleep < min_sleep*1000 { min_sleep*1000  } else { curr_sleep };
+    //     // thread::sleep(time::Duration::from_nanos(sleep));
+    //     let now = Instant::now();
+    //     while now.elapsed().as_micros() < (curr_sleep/2000) as u128 {
+    //     }
+    //     port.set_low();
+    //     while now.elapsed().as_micros() < (curr_sleep/2000) as u128 {
+    //     }
+    //     // thread::sleep(time::Duration::from_nanos(sleep));
+    // }
+    // println!("waited: {}", waited);
+    // match sd {
+    //     StepDir::DOWN => sp.pos -= 1,
+    //     StepDir::UP => sp.pos += 1,
+    //     StepDir::BIG_DOWN => sp.pos -= 64,
+    //     StepDir::BIG_UP => sp.pos += 64
+    // }
     
-    println!("{:?}:{:?} {}", st, sd, sp.pos);
+    // println!("{:?}:{:?} {}", st, sd, sp.pos);
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut stepp_ps: [StepPos; 3] = [StepPos{pos: 0},StepPos{pos: 0},StepPos{pos: 0} ];
 
     let mut gilrs = Gilrs::new().unwrap();
@@ -87,27 +105,28 @@ fn main() {
 	break;
     }
 
-    let mut port = match serialport::new(port_path, 9600).open() {
-        Err(e) => {
-            eprintln!("Failed to open. Error: {}", e);
-            ::std::process::exit(1);
-        }
-        Ok(p) => p,
-    };
+    // define GPIO pins
+    const DIRECTION_PIN: u8= 22; // Direction (DIR) GPIO Pin
+    const STEP_PIN: u8 = 23; // Step GPIO Pin
+    const DIRECTION_PIN_Y: u8= 17; // Direction (DIR) GPIO Pin
+    const STEP_PIN_Y: u8 = 27; // Step GPIO Pin
+    const ENABLE_PIN: u8 = 24; // enable pin (LOW to enable)
+    let gpio = Gpio::new()?;
+    let mut dir_pin = gpio.get(DIRECTION_PIN)?.into_output();
+    let mut step_pin = gpio.get(STEP_PIN)?.into_output();
+    let mut enable_pin = gpio.get(ENABLE_PIN)?.into_output();
+    let mut dir_pin_y = gpio.get(DIRECTION_PIN_Y)?.into_output();
+    let mut step_pin_y = gpio.get(STEP_PIN_Y)?.into_output();
+
+    enable_pin.set_low();
+    dir_pin.set_low();
+    dir_pin_y.set_low();
+    step_pin_y.set_low();
+    step_pin.set_low();
 
     let output = "a".as_bytes();
-    port.write(output).expect("Write failed!");
     thread::sleep(time::Duration::from_millis(100));
-    port.flush().unwrap();
-   
-    println!("Reading from port");
-    port.set_timeout(Duration::from_millis(500));
-    let mut serial_buf: Vec<u8> = Vec::new();
-    match port.read_to_end(&mut serial_buf){
-        Ok(t) => io::stdout().write_all(&serial_buf[..t]).unwrap(),
-        Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-        Err(e) => eprintln!("{:?}", e),
-    }
+
     // Iterate over all connected gamepads
     for (_id, gamepad) in gilrs.gamepads() {
         let guuid = Uuid::from_bytes(gamepad.uuid());
@@ -125,52 +144,60 @@ fn main() {
         
         // You can also use cached gamepad state
         if let Some(gamepad) = active_gamepad.map(|id| gilrs.gamepad(id)) {
+            let mut has_changes = false;
+
             if gamepad.is_pressed(Button::DPadLeft) {
-                move_stepper(&mut *port, Steppers::YAxis, StepDir::DOWN, &mut stepp_ps[0])
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::DOWN, &mut stepp_ps[0], 1, 100);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::DPadRight) {
-                move_stepper(&mut *port, Steppers::YAxis, StepDir::UP, &mut stepp_ps[0])
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::UP, &mut stepp_ps[0],1, 100);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::DPadDown) {
-                move_stepper(&mut *port, Steppers::XAxis, StepDir::DOWN, &mut stepp_ps[1])
+                move_stepper(&mut step_pin_y, &mut dir_pin_y, StepDir::DOWN, &mut stepp_ps[1],1, 100);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::DPadUp) {
-                move_stepper(&mut *port, Steppers::XAxis, StepDir::UP, &mut stepp_ps[1])
+                move_stepper(&mut step_pin_y, &mut dir_pin_y, StepDir::UP, &mut stepp_ps[1],1, 100);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::Select) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::DOWN, &mut stepp_ps[2])
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::DOWN, &mut stepp_ps[2],1, 0);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::LeftTrigger2) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::UP, &mut stepp_ps[2])
-            }
-            if gamepad.is_pressed(Button::Select) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::DOWN, &mut stepp_ps[2])
-            }
-            if gamepad.is_pressed(Button::LeftTrigger2) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::UP, &mut stepp_ps[2])
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::UP, &mut stepp_ps[2],1, 0);
+                has_changes = true;
             }
 
             if gamepad.is_pressed(Button::West) {
-                move_stepper(&mut *port, Steppers::YAxis, StepDir::BIG_DOWN, &mut stepp_ps[0])
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::DOWN, &mut stepp_ps[0],16, 0);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::East) {
-                move_stepper(&mut *port, Steppers::YAxis, StepDir::BIG_UP, &mut stepp_ps[0])
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::UP, &mut stepp_ps[0],16, 0);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::South) {
-                move_stepper(&mut *port, Steppers::XAxis, StepDir::BIG_DOWN, &mut stepp_ps[1])
+                move_stepper(&mut step_pin_y, &mut dir_pin_y, StepDir::DOWN, &mut stepp_ps[1],16, 0);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::North) {
-                move_stepper(&mut *port, Steppers::XAxis, StepDir::BIG_UP, &mut stepp_ps[1])
+                move_stepper(&mut step_pin_y, &mut dir_pin_y, StepDir::UP, &mut stepp_ps[1],16, 0);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::RightTrigger) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::BIG_DOWN, &mut stepp_ps[2]);
-                thread::sleep(time::Duration::from_millis(100));
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::DOWN, &mut stepp_ps[2],1, 10);
+                has_changes = true;
             }
             if gamepad.is_pressed(Button::LeftTrigger) {
-                move_stepper(&mut *port, Steppers::Focus, StepDir::BIG_UP, &mut stepp_ps[2]);
-                thread::sleep(time::Duration::from_millis(100));
+                move_stepper(&mut step_pin, &mut dir_pin, StepDir::UP, &mut stepp_ps[2],1, 10);
+                has_changes = true;
             }
-
+            if(has_changes){
+                println!("X {}, Y {}, F {}", stepp_ps[0].pos,stepp_ps[1].pos,stepp_ps[2].pos);
+            }
         }
     }
 }

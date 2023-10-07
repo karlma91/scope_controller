@@ -9,6 +9,7 @@ target-dir = "/tmp/cargo-target"
 [dependencies]
 gilrs = "0.10.2"
 serialport = "4.2.1"
+rppal = "0.14.1"
 clap = { version = "3.1.6", features = ["derive"] }
 [dependencies.uuid]
 version = "1.3.3"
