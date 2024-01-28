@@ -1,7 +1,5 @@
 use gilrs::{Gilrs, Button, Event};
 use std::{thread, time};
-use clap::{Arg, Command};
-use std::io::{self, Write};
 use uuid::Uuid;
 use std::error::Error;
 use rppal::gpio::{Gpio, OutputPin};
@@ -21,6 +19,14 @@ enum StepDir {
     UP,
     DOWN
 }
+
+impl StepperController {
+    pub fn new() -> Result<Self, Box<dyn Error>> {
+        
+
+    }
+}
+
 fn do_steps(port: &mut OutputPin, sp: &mut StepPos, steps:i32){
     for _n in 0..steps {
         port.set_high();
@@ -50,7 +56,7 @@ fn move_stepper(port: &mut OutputPin, dir_pin: &mut OutputPin, sd: StepDir, sp: 
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn start_loop() -> Result<(), Box<dyn Error>> {
     let mut stepp_ps: [StepPos; 3] = [StepPos{pos: 0},StepPos{pos: 0},StepPos{pos: 0} ];
 
     let mut gilrs = Gilrs::new().unwrap();
